@@ -1,98 +1,157 @@
-:root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 220 14% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 14% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 14% 10%;
+
+    --primary: 220 14% 10%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 13% 96%;
+    --secondary-foreground: 220 14% 10%;
+
+    --muted: 220 13% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 220 13% 96%;
+    --accent-foreground: 220 14% 10%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 220 14% 10%;
+
+    --radius: 0.5rem;
+
+    /* Council-specific colors */
+    --vote-yes: 142 71% 45%;
+    --vote-no: 0 84% 60%;
+    --vote-abstain: 220 9% 63%;
+    --status-thinking: 38 92% 50%;
+    --status-voting: 217 91% 60%;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 220 9% 46%;
+    --sidebar-primary: 220 14% 10%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 13% 96%;
+    --sidebar-accent-foreground: 220 14% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217 91% 60%;
+  }
+
+  .dark {
+    --background: 220 14% 8%;
+    --foreground: 220 13% 96%;
+
+    --card: 220 14% 10%;
+    --card-foreground: 220 13% 96%;
+
+    --popover: 220 14% 10%;
+    --popover-foreground: 220 13% 96%;
+
+    --primary: 220 13% 96%;
+    --primary-foreground: 220 14% 10%;
+
+    --secondary: 220 14% 14%;
+    --secondary-foreground: 220 13% 96%;
+
+    --muted: 220 14% 14%;
+    --muted-foreground: 220 9% 56%;
+
+    --accent: 220 14% 14%;
+    --accent-foreground: 220 13% 96%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 14% 18%;
+    --input: 220 14% 18%;
+    --ring: 220 13% 96%;
+
+    /* Council-specific colors (dark mode) */
+    --vote-yes: 142 71% 45%;
+    --vote-no: 0 84% 60%;
+    --vote-abstain: 220 9% 50%;
+    --status-thinking: 38 92% 50%;
+    --status-voting: 217 91% 60%;
+
+    /* Sidebar */
+    --sidebar-background: 220 14% 6%;
+    --sidebar-foreground: 220 13% 80%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 12%;
+    --sidebar-accent-foreground: 220 13% 96%;
+    --sidebar-border: 220 14% 18%;
+    --sidebar-ring: 217 91% 60%;
+  }
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background: #f5f5f5;
-}
+@layer utilities {
+  /* Pulsing animation for status indicators */
+  @keyframes pulse-amber {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
 
-#root {
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
-}
+  @keyframes pulse-blue {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
 
-/* Global markdown styling */
-.markdown-content {
-  padding: 12px;
-}
+  .animate-pulse-thinking {
+    animation: pulse-amber 1.5s ease-in-out infinite;
+  }
 
-.markdown-content p {
-  margin: 0 0 12px 0;
-}
+  .animate-pulse-voting {
+    animation: pulse-blue 1s ease-in-out infinite;
+  }
 
-.markdown-content p:last-child {
-  margin-bottom: 0;
-}
+  /* Smooth streaming text animation */
+  @keyframes text-appear {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
 
-.markdown-content h1,
-.markdown-content h2,
-.markdown-content h3,
-.markdown-content h4,
-.markdown-content h5,
-.markdown-content h6 {
-  margin: 16px 0 8px 0;
-}
-
-.markdown-content h1:first-child,
-.markdown-content h2:first-child,
-.markdown-content h3:first-child,
-.markdown-content h4:first-child,
-.markdown-content h5:first-child,
-.markdown-content h6:first-child {
-  margin-top: 0;
-}
-
-.markdown-content ul,
-.markdown-content ol {
-  margin: 0 0 12px 0;
-  padding-left: 24px;
-}
-
-.markdown-content li {
-  margin: 4px 0;
-}
-
-.markdown-content pre {
-  background: #f5f5f5;
-  padding: 12px;
-  border-radius: 4px;
-  overflow-x: auto;
-  margin: 0 0 12px 0;
-}
-
-.markdown-content code {
-  background: #f5f5f5;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-family: monospace;
-  font-size: 0.9em;
-}
-
-.markdown-content pre code {
-  background: none;
-  padding: 0;
-}
-
-.markdown-content blockquote {
-  margin: 0 0 12px 0;
-  padding-left: 16px;
-  border-left: 4px solid #ddd;
-  color: #666;
+  .animate-text-stream {
+    animation: text-appear 0.1s ease-out;
+  }
 }

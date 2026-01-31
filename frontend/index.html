@@ -2,12 +2,47 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>AI Council Nexus</title>
+    <meta name="description" content="Multi-AI Deliberation Council" />
+    <meta name="author" content="AI Council" />
+    <meta name="color-scheme" content="light dark" />
+
+    <meta property="og:title" content="AI Council Nexus" />
+    <meta property="og:description" content="Multi-AI Deliberation Council" />
+    <meta property="og:type" content="website" />
+
+    <!-- System Dark Mode Detection -->
+    <script>
+      (function() {
+        const stored = localStorage.getItem('council-nexus-settings');
+        let theme = 'system';
+        if (stored) {
+          try { theme = JSON.parse(stored).theme || 'system'; } catch(e) {}
+        }
+        
+        if (theme === 'dark' || 
+            (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        }
+        
+        // Listen for system changes
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+          const currentSettings = localStorage.getItem('council-nexus-settings');
+          let currentTheme = 'system';
+          if (currentSettings) {
+            try { currentTheme = JSON.parse(currentSettings).theme || 'system'; } catch(e) {}
+          }
+          if (currentTheme === 'system') {
+            document.documentElement.classList.toggle('dark', e.matches);
+          }
+        });
+      })();
+    </script>
   </head>
+
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
