@@ -5,17 +5,25 @@ build/
 dist/
 wheels/
 *.egg-info
+*.log
 
 # Virtual environments
 .venv
-
-# Keys and secrets
 .env
 
 # Data files
 data/
+*.db
+*.sqlite
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/.lovable/
+
+# Debug and temporary files
+*.png
+*.html
+*.webp
+.DS_Store

@@ -5,24 +5,33 @@
 echo "Starting LLM Council..."
 echo ""
 
+cd "$(dirname "$0")"
+
+# Kill any existing processes on our ports
+fuser -k 8000/tcp 2>/dev/null || true
+fuser -k 8080/tcp 2>/dev/null || true
+sleep 1
+
 # Start backend
-echo "Starting backend on http://localhost:8001..."
-uv run python -m backend.main &
+echo "Starting backend on http://localhost:8000..."
+source .venv/bin/activate
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload &
 BACKEND_PID=$!
 
 # Wait a bit for backend to start
-sleep 2
+sleep 3
 
 # Start frontend
-echo "Starting frontend on http://localhost:5173..."
+echo "Starting frontend on http://localhost:8080..."
 cd frontend
 npm run dev &
 FRONTEND_PID=$!
+cd ..
 
 echo ""
 echo "✓ LLM Council is running!"
-echo "  Backend:  http://localhost:8001"
-echo "  Frontend: http://localhost:5173"
+echo "  Backend:  http://localhost:8000"
+echo "  Frontend: http://localhost:8080"
 echo ""
 echo "Press Ctrl+C to stop both servers"
 

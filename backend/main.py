@@ -1,189 +1,175 @@
-"""FastAPI backend for LLM Council."""
+"""
+Main FastAPI Application - Hybrid AI Council Backend
 
-from fastapi import FastAPI, HTTPException
+Provides endpoints for:
+- Chat with streaming responses
+- Tab management (show/foreground)
+- Health checks
+
+Accepts API keys from frontend for fallback routing.
+"""
+
+from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Dict, Any
-import uuid
+from typing import Optional, Dict
 import json
 import asyncio
 
-from . import storage
-from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
+from backend.services.fallback_router import get_router, APIKeys
 
-app = FastAPI(title="LLM Council API")
+app = FastAPI(title="Hybrid AI Council")
 
-# Enable CORS for local development
+# CORS for React Frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["*"],  # In production, lock this down
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-class CreateConversationRequest(BaseModel):
-    """Request to create a new conversation."""
-    pass
+class ChatRequest(BaseModel):
+    prompt: str
+    model_id: str = "council"
+    model_name: str = "GPT-4o"
+    system_prompt: Optional[str] = None
 
 
-class SendMessageRequest(BaseModel):
-    """Request to send a message in a conversation."""
-    content: str
+class APIKeysHeader(BaseModel):
+    openrouter: Optional[str] = None
+    groq: Optional[str] = None
+    google: Optional[str] = None
 
 
-class ConversationMetadata(BaseModel):
-    """Conversation metadata for list view."""
-    id: str
-    created_at: str
-    title: str
-    message_count: int
+def parse_api_keys(header: Optional[str]) -> Dict[str, str]:
+    """Parse API keys from X-API-Keys header (JSON)."""
+    if not header:
+        return {}
+    try:
+        return json.loads(header)
+    except:
+        return {}
 
 
-class Conversation(BaseModel):
-    """Full conversation with all messages."""
-    id: str
-    created_at: str
-    title: str
-    messages: List[Dict[str, Any]]
+@app.get("/health")
+def health():
+    """Basic health check endpoint."""
+    return {"status": "ok", "system": "Hybrid AI Council"}
 
 
-@app.get("/")
-async def root():
-    """Health check endpoint."""
-    return {"status": "ok", "service": "LLM Council API"}
-
-
-@app.get("/api/conversations", response_model=List[ConversationMetadata])
-async def list_conversations():
-    """List all conversations (metadata only)."""
-    return storage.list_conversations()
-
-
-@app.post("/api/conversations", response_model=Conversation)
-async def create_conversation(request: CreateConversationRequest):
-    """Create a new conversation."""
-    conversation_id = str(uuid.uuid4())
-    conversation = storage.create_conversation(conversation_id)
-    return conversation
-
-
-@app.get("/api/conversations/{conversation_id}", response_model=Conversation)
-async def get_conversation(conversation_id: str):
-    """Get a specific conversation with all its messages."""
-    conversation = storage.get_conversation(conversation_id)
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    return conversation
-
-
-@app.post("/api/conversations/{conversation_id}/message")
-async def send_message(conversation_id: str, request: SendMessageRequest):
+@app.get("/api/health/metrics")
+def health_metrics():
     """
-    Send a message and run the 3-stage council process.
-    Returns the complete response with all stages.
+    Detailed system metrics for monitoring.
+    
+    Returns RAM, CPU, network stats, and active models.
     """
-    # Check if conversation exists
-    conversation = storage.get_conversation(conversation_id)
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
-    # Check if this is the first message
-    is_first_message = len(conversation["messages"]) == 0
-
-    # Add user message
-    storage.add_user_message(conversation_id, request.content)
-
-    # If this is the first message, generate a title
-    if is_first_message:
-        title = await generate_conversation_title(request.content)
-        storage.update_conversation_title(conversation_id, title)
-
-    # Run the 3-stage council process
-    stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
-        request.content
-    )
-
-    # Add assistant message with all stages
-    storage.add_assistant_message(
-        conversation_id,
-        stage1_results,
-        stage2_results,
-        stage3_result
-    )
-
-    # Return the complete response with metadata
+    from backend.services.metrics import get_metrics_service
+    
+    service = get_metrics_service()
+    metrics = service.get_snapshot()
+    budget = service.check_memory_budget()
+    
     return {
-        "stage1": stage1_results,
-        "stage2": stage2_results,
-        "stage3": stage3_result,
-        "metadata": metadata
+        "status": "ok",
+        "metrics": metrics.to_dict(),
+        "memory_budget": budget,
     }
 
 
-@app.post("/api/conversations/{conversation_id}/message/stream")
-async def send_message_stream(conversation_id: str, request: SendMessageRequest):
-    """
-    Send a message and stream the 3-stage council process.
-    Returns Server-Sent Events as each stage completes.
-    """
-    # Check if conversation exists
-    conversation = storage.get_conversation(conversation_id)
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+@app.get("/api/council/personas")
+def get_personas():
+    """Get list of council member personas for frontend."""
+    from backend.core.orchestrator import COUNCIL_PERSONAS
+    
+    return {
+        "personas": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "title": p.title,
+                "color": p.color,
+            }
+            for p in COUNCIL_PERSONAS.values()
+        ]
+    }
 
-    # Check if this is the first message
-    is_first_message = len(conversation["messages"]) == 0
 
-    async def event_generator():
+@app.websocket("/ws/metrics")
+async def websocket_metrics(websocket: WebSocket):
+    """
+    Live system metrics streaming via WebSocket.
+    
+    Sends JSON snapshots at 1Hz for real-time dashboard updates.
+    """
+    from backend.services.metrics import get_metrics_service
+    
+    await websocket.accept()
+    service = get_metrics_service()
+    
+    try:
+        while True:
+            metrics = service.get_snapshot()
+            budget = service.check_memory_budget()
+            
+            await websocket.send_json({
+                "metrics": metrics.to_dict(),
+                "memory_budget": budget,
+            })
+            
+            await asyncio.sleep(1)  # 1Hz updates
+    except WebSocketDisconnect:
+        pass  # Client disconnected
+    except Exception as e:
+        await websocket.close(code=1011, reason=str(e))
+
+@app.post("/api/warmup")
+async def warmup():
+    """Initialize browser agent in advance."""
+    try:
+        router = get_router()
+        # Trigger lazy-init
+        router._init_browser()
+        return {"status": "success", "message": "Browser initialization started"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/chat")
+async def chat(
+    request: ChatRequest,
+    x_api_keys: Optional[str] = Header(None, alias="X-API-Keys"),
+):
+    """
+    Stream a chat response from LMArena or fallback APIs.
+    
+    API keys can be passed via X-API-Keys header as JSON.
+    """
+    api_keys = parse_api_keys(x_api_keys)
+    router = get_router(api_keys)
+    
+    def event_generator():
         try:
-            # Add user message
-            storage.add_user_message(conversation_id, request.content)
+            for chunk in router.chat_stream(
+                prompt=request.prompt,
+                model_id=request.model_id,
+                model_name=request.model_name,
+                system_prompt=request.system_prompt,
+            ):
+                # Format as SSE
+                logger.info(f"Streaming chunk for {request.model_id}: {len(chunk)} chars")
+                data = json.dumps({"content": chunk, "model": request.model_name})
+                yield f"data: {data}\n\n"
 
-            # Start title generation in parallel (don't await yet)
-            title_task = None
-            if is_first_message:
-                title_task = asyncio.create_task(generate_conversation_title(request.content))
-
-            # Stage 1: Collect responses
-            yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            stage1_results = await stage1_collect_responses(request.content)
-            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
-
-            # Stage 2: Collect rankings
-            yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-            stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
-            aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
-
-            # Stage 3: Synthesize final answer
-            yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results)
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
-
-            # Wait for title generation if it was started
-            if title_task:
-                title = await title_task
-                storage.update_conversation_title(conversation_id, title)
-                yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
-
-            # Save complete assistant message
-            storage.add_assistant_message(
-                conversation_id,
-                stage1_results,
-                stage2_results,
-                stage3_result
-            )
-
-            # Send completion event
-            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
-
+            yield "data: [DONE]\n\n"
         except Exception as e:
-            # Send error event
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-
+            error_data = json.dumps({"error": str(e)})
+            yield f"data: {error_data}\n\n"
+            yield "data: [DONE]\n\n"
+    
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
@@ -194,6 +180,270 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
     )
 
 
+@app.post("/api/council/deliberate")
+async def council_deliberate(
+    request: ChatRequest,
+    x_api_keys: Optional[str] = Header(None, alias="X-API-Keys"),
+):
+    """
+    Run a full council deliberation with all members.
+    
+    Streams responses from each council member in turn.
+    """
+    api_keys = parse_api_keys(x_api_keys)
+    router = get_router(api_keys)
+    
+    # Default council members
+    council = [
+        {"id": "advocate", "name": "The Advocate", "model": "Gemini Pro"},
+        {"id": "skeptic", "name": "The Skeptic", "model": "Claude 3.5"},
+        {"id": "analyst", "name": "The Analyst", "model": "GPT-4o"},
+        {"id": "pragmatist", "name": "The Pragmatist", "model": "Llama 3.3"},
+        {"id": "visionary", "name": "The Visionary", "model": "Mistral Large"},
+    ]
+    
+    def event_generator():
+        for member in council:
+            # Signal start of member
+            yield f"data: {json.dumps({'type': 'member_start', 'member': member})}\n\n"
+            
+            try:
+                for chunk in router.chat_stream(
+                    prompt=request.prompt,
+                    model_id=member["id"],
+                    model_name=member["model"],
+                ):
+                    data = json.dumps({
+                        "type": "chunk",
+                        "member_id": member["id"],
+                        "content": chunk
+                    })
+                    yield f"data: {data}\n\n"
+            except Exception as e:
+                error_data = json.dumps({
+                    "type": "error",
+                    "member_id": member["id"],
+                    "error": str(e)
+                })
+                yield f"data: {error_data}\n\n"
+            
+            # Signal end of member
+            yield f"data: {json.dumps({'type': 'member_end', 'member_id': member['id']})}\n\n"
+        
+        yield "data: [DONE]\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+    )
+
+
+@app.post("/api/tabs/{model_id}/show")
+async def show_tab(model_id: str):
+    """Bring a model's browser tab to focus."""
+    try:
+        router = get_router()
+        if router._browser_agent and model_id in router._browser_agent.active_models:
+            tab = router._browser_agent.active_models[model_id]
+            router._browser_agent.browser.activate_tab(tab.tab_id)
+            return {"status": "success", "model_id": model_id}
+        raise HTTPException(status_code=404, detail="Tab not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/challenge/{model_id}/screenshot")
+async def get_challenge_screenshot(model_id: str):
+    """Get screenshot of challenge page for in-app solving."""
+    try:
+        router = get_router()
+        if router._browser_agent:
+            screenshot = router._browser_agent.get_challenge_screenshot(model_id)
+            if screenshot:
+                return {"screenshot": screenshot, "model_id": model_id}
+        raise HTTPException(status_code=404, detail="No screenshot available")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ClickRequest(BaseModel):
+    x: int
+    y: int
+
+
+@app.post("/api/challenge/{model_id}/click")
+async def click_challenge(model_id: str, request: ClickRequest):
+    """Click at position to solve challenge from frontend."""
+    try:
+        router = get_router()
+        if router._browser_agent:
+            success = router._browser_agent.click_at_position(model_id, request.x, request.y)
+            if success:
+                return {"status": "success", "model_id": model_id}
+        raise HTTPException(status_code=400, detail="Click failed")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/models")
+def list_models():
+    """List available models and their providers."""
+    return {
+        "lmarena": [
+            "GPT-4o", "GPT-4", "GPT-5",
+            "Claude 3.5", "Claude 4",
+            "Gemini Pro", "Gemini 2.0",
+            "Llama 3.3", "Mistral Large",
+        ],
+        "fallback": {
+            "openrouter": ["DeepSeek R1", "Qwen3 32B", "Mistral Small"],
+            "groq": ["Llama 3.3 70B", "Gemma 3 9B", "Mixtral 8x7B"],
+            "google": ["Gemini 2.0 Flash"],
+        },
+        "local": {
+            "bitnet": "BitNet-b1.58-2B-4T (AVX-512)",
+            "ollama": "Llama 3.2:3B"
+        }
+    }
+
+
+# === DEEP RESEARCH ENDPOINTS ===
+
+class ResearchRequest(BaseModel):
+    query: str
+    max_iterations: int = 3  # 1-5, UI configurable
+
+
+@app.post("/api/research")
+async def deep_research(request: ResearchRequest):
+    """
+    Execute deep research with streaming status updates.
+    
+    Uses LangGraph cyclic workflow:
+    1. Generate search queries
+    2. Web search (DuckDuckGo/Brave)
+    3. Analyze for gaps
+    4. Iterate or synthesize
+    """
+    from backend.core.research_graph import ResearchGraph, ResearchConfig
+    
+    # Clamp iterations to 1-5 range
+    max_iter = max(1, min(5, request.max_iterations))
+    
+    config = ResearchConfig(max_iterations=max_iter)
+    graph = ResearchGraph(config)
+    
+    async def event_generator():
+        try:
+            async for event in graph.research_stream(request.query, max_iter):
+                data = json.dumps(event)
+                yield f"data: {data}\n\n"
+            
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            error_data = json.dumps({"type": "error", "content": str(e)})
+            yield f"data: {error_data}\n\n"
+            yield "data: [DONE]\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
+
+# === FILE UPLOAD ENDPOINTS ===
+
+from fastapi import UploadFile, File
+import tempfile
+import os as _os
+
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    """
+    Upload and process a file for RAG ingestion.
+    
+    Supports: PDF, Office docs, code files, academic papers.
+    Returns processed markdown and adds to knowledge base.
+    """
+    from backend.services.file_node import FileProcessor
+    from backend.services.rag import RAGService
+    
+    processor = FileProcessor()
+    rag = RAGService()
+    
+    # Save to temp file
+    temp_path = None
+    try:
+        suffix = _os.path.splitext(file.filename)[1] if file.filename else ""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            temp_path = tmp.name
+        
+        # Process file
+        result = processor.process(temp_path)
+        
+        if result["status"] == "success":
+            # Chunk and add to RAG
+            chunks = processor.chunk_content(result["content"])
+            
+            for i, chunk in enumerate(chunks):
+                doc_id = f"{file.filename}_{i}"
+                rag.add_document(
+                    doc_id=doc_id,
+                    text=chunk,
+                    metadata={
+                        "filename": file.filename,
+                        "file_type": result["file_type"],
+                        "chunk_index": i
+                    }
+                )
+            
+            return {
+                "status": "success",
+                "filename": file.filename,
+                "file_type": result["file_type"],
+                "chunks_added": len(chunks),
+                "preview": result["content"][:500] + "..." if len(result["content"]) > 500 else result["content"]
+            }
+        else:
+            return {
+                "status": "error",
+                "error": result.get("metadata", {}).get("error", "Processing failed")
+            }
+    
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+    
+    finally:
+        if temp_path and _os.path.exists(temp_path):
+            _os.unlink(temp_path)
+
+
+@app.get("/api/research/settings")
+def get_research_settings():
+    """Get current research settings for UI."""
+    from backend.config import MAX_RESEARCH_ITERATIONS, BRAVE_API_KEY
+    
+    return {
+        "max_iterations": MAX_RESEARCH_ITERATIONS,
+        "search_providers": ["duckduckgo"] + (["brave"] if BRAVE_API_KEY else []),
+        "default_provider": "duckduckgo"
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+

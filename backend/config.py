@@ -1,26 +1,55 @@
-"""Configuration for the LLM Council."""
-
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# OpenRouter API key
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# --- Hardware Constraints (Target: 16GB RAM) ---
+# We limit the context window for local models to prevent OOM
+MAX_LOCAL_CONTEXT = 4096 
 
-# Council members - list of OpenRouter model identifiers
-COUNCIL_MODELS = [
-    "openai/gpt-5.1",
-    "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
-]
+# Ollama Keep-Alive Settings
+# During an active discussion, we keep the model loaded (e.g., for 5 minutes)
+OLLAMA_KEEP_ALIVE_ACTIVE = "5m"
+# When the session ends or we switch to a heavy cloud task, we unload immediately
+OLLAMA_KEEP_ALIVE_IDLE = "0"
 
-# Chairman model - synthesizes final response
-CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
+# --- API Limits (buffers applied) ---
+# Gemini Flash free tier is ~15 RPM. We set a safe limit.
+GEMINI_RPM_LIMIT = 13
+# Groq free tier varies, but we set a safe limit for 70B models.
+GROQ_RPM_LIMIT = 25
 
-# OpenRouter API endpoint
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+# --- Model Selection ---
+# Local: Lightweight 3B model for 16GB RAM
+LOCAL_MODEL = "llama3.2:3b"
 
-# Data directory for conversation storage
-DATA_DIR = "data/conversations"
+# Cloud (Fast): Groq LPU
+FAST_CLOUD_MODEL = "llama-3.3-70b-versatile"
+
+# Cloud (Smart): Gemini 1.5 Pro or Flash
+SMART_CLOUD_MODEL = "gemini-2.0-flash"
+
+# --- Vector DB ---
+# Lightweight embedding model (approx 80MB)
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+# Path to persist ChromaDB
+CHROMA_DB_PATH = os.path.join(os.getcwd(), "data", "chroma_db")
+
+# --- Keys ---
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+
+# --- Web Agent Config ---
+LMSYS_URL = "https://lmarena.ai/?mode=direct"
+# Path to persist browser profile (cookies, auth)
+BROWSER_USER_DATA_DIR = os.path.join(os.getcwd(), "data", "browser_profile")
+
+# --- BitNet Config (AVX-512) ---
+BITNET_MODEL_PATH = os.path.expanduser("~/bitnet/models/BitNet-b1.58-2B-4T")
+BITNET_EXECUTABLE = os.path.expanduser("~/bitnet/run_inference.py")
+
+# --- Deep Research ---
+BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")  # Optional, DuckDuckGo is primary
+MAX_RESEARCH_ITERATIONS = 3  # UI-configurable (1-5)
+
