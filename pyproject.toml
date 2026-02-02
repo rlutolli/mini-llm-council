@@ -22,3 +22,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "psutil>=5.9.0",
 ]
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+exclude = ["data*", "frontend*"]

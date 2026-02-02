@@ -254,6 +254,19 @@ async def show_tab(model_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/agent/show")
+async def show_agent_browser():
+    """Bring the background browser window to front for manual bypass."""
+    try:
+        router = get_router()
+        if router._browser_agent:
+            success = router._browser_agent.show_browser()
+            return {"status": "success" if success else "error"}
+        raise HTTPException(status_code=404, detail="Agent not initialized")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/challenge/{model_id}/screenshot")
 async def get_challenge_screenshot(model_id: str):
     """Get screenshot of challenge page for in-app solving."""

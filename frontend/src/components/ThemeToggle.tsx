@@ -12,32 +12,37 @@ type Theme = 'light' | 'dark' | 'system';
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>('system');
-  
+
   useEffect(() => {
     const stored = localStorage.getItem('theme') as Theme | null;
-    if (stored) {
-      setTheme(stored);
-      applyTheme(stored);
-    }
+    const initialTheme = stored || 'system';
+    setTheme(initialTheme);
+    applyTheme(initialTheme);
+
+    // Listen for system changes
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => {
+      if ((localStorage.getItem('theme') as Theme) === 'system' || !localStorage.getItem('theme')) {
+        applyTheme('system');
+      }
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
-  
+
   const applyTheme = (newTheme: Theme) => {
     const root = document.documentElement;
-    
-    if (newTheme === 'system') {
-      const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      root.classList.toggle('dark', systemDark);
-    } else {
-      root.classList.toggle('dark', newTheme === 'dark');
-    }
+    const isDark = newTheme === 'dark' || (newTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    root.classList.toggle('dark', isDark);
   };
-  
+
   const handleThemeChange = (newTheme: Theme) => {
     setTheme(newTheme);
     localStorage.setItem('theme', newTheme);
     applyTheme(newTheme);
   };
-  
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

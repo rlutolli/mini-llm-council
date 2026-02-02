@@ -55,7 +55,7 @@ class LMSYSAgent:
                     options.set_user_data_path(BROWSER_USER_DATA_DIR)
                     options.auto_port()
                     options.headless(headless)
-                    options.set_argument('--window-size=1920,1080')
+                    options.set_argument('--window-size=1280,720')
                     options.set_argument('--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
                     
                     LMSYSAgent._browser = Chromium(options)
@@ -98,6 +98,21 @@ class LMSYSAgent:
         self._model_ready[model_id] = False
         
         return tab
+
+    def show_browser(self):
+        """Bring the browser window to front (if not headless)."""
+        if self.browser:
+            try:
+                # Force window to top/focus
+                self.browser.set.window_state('maximized')
+                # Activate current tab
+                tab = self.browser.latest_tab
+                self.browser.activate_tab(tab.tab_id)
+                logger.info("Browser brought to foreground")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to show browser: {e}")
+        return False
     
     def _cleanup_tab(self, model_id: str):
         """Clean up a dead tab."""

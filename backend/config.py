@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- Hardware Constraints (Target: 16GB RAM) ---
+# --- Resource Constraints ---
 # We limit the context window for local models to prevent OOM
 MAX_LOCAL_CONTEXT = 4096 
 
@@ -20,7 +20,7 @@ GEMINI_RPM_LIMIT = 13
 GROQ_RPM_LIMIT = 25
 
 # --- Model Selection ---
-# Local: Lightweight 3B model for 16GB RAM
+# Local: Lightweight 3B model
 LOCAL_MODEL = "llama3.2:3b"
 
 # Cloud (Fast): Groq LPU
