@@ -130,8 +130,9 @@ const Index = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
-        {/* Council Header */}
-        <div className="border-b border-border bg-card/50">
+        {/* Unified Sticky Header Group */}
+        <div className="sticky top-0 z-30 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
+          {/* Council Header */}
           <div className="max-w-4xl mx-auto">
             <CouncilHeader
               members={members}
@@ -140,13 +141,11 @@ const Index = () => {
               leadMemberId={leadMemberId}
             />
           </div>
-        </div>
 
-        {/* Mode Toggle + Toolbar */}
-        <div className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-10">
-          <div className="max-w-4xl mx-auto flex items-center justify-between px-4 py-2">
+          {/* Mode Toggle + Toolbar */}
+          <div className="max-w-4xl mx-auto flex items-center justify-between px-4 py-2 border-t border-border/50">
             {/* Mode Toggle */}
-            <div className="flex items-center gap-1 bg-secondary/50 rounded-lg p-1">
+            <div className="flex items-center gap-1 bg-secondary/50 rounded-lg p-0.5">
               <Button
                 variant={viewMode === 'chat' ? 'default' : 'ghost'}
                 size="sm"
@@ -178,66 +177,12 @@ const Index = () => {
 
             {/* Settings */}
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  try {
-                    await fetch('http://localhost:8000/api/agent/show', { method: 'POST' });
-                  } catch (e) {
-                    console.error("Failed to trigger bypass:", e);
-                  }
-                }}
-                className="gap-2 text-xs h-8"
-                title="Launch visible browser to bypass Cloudflare"
-              >
-                <MonitorPlay className="h-3 w-3" />
-                Bypass
-              </Button>
-              {viewMode === 'council' && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setShowCouncilSeats(!showCouncilSeats)}
-                  title={showCouncilSeats ? "Hide Council" : "Show Council"}
-                >
-                  <Scale className={cn("h-4 w-4", showCouncilSeats ? "text-primary" : "text-muted-foreground")} />
-                </Button>
-              )}
               <SettingsModal />
               <ThemeToggle />
             </div>
           </div>
         </div>
 
-        {/* Council Visualization (Moved out of stream) */}
-        <AnimatePresence>
-          {viewMode === 'council' && showCouncilSeats && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="px-4 py-2 border-b border-border bg-secondary/20"
-            >
-              <div className="max-w-3xl mx-auto">
-                <CouncilSeats
-                  opinions={messages.map(m => ({
-                    personaId: m.memberId,
-                    content: m.content,
-                    isStreaming: m.isStreaming
-                  }))}
-                  votes={members.filter(m => m.vote).map(m => ({
-                    personaId: m.id,
-                    vote: m.vote as 'yes' | 'no' | 'abstain'
-                  }))}
-                  activePersona={activeMemberId}
-                  showVotes={phase === 'voting' || phase === 'complete'}
-                />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Challenge Warning */}
         <AnimatePresence>

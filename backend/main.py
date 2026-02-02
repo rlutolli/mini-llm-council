@@ -36,6 +36,7 @@ class ChatRequest(BaseModel):
     model_id: str = "council"
     model_name: str = "GPT-4o"
     system_prompt: Optional[str] = None
+    fast_mode: bool = False
 
 
 class APIKeysHeader(BaseModel):
@@ -186,55 +187,45 @@ async def council_deliberate(
     x_api_keys: Optional[str] = Header(None, alias="X-API-Keys"),
 ):
     """
-    Run a full council deliberation with all members.
+    Run a full council deliberation with all members using LangGraph.
     
-    Streams responses from each council member in turn.
+    Streams:
+    1. Phase transitions (INIT -> DELIBERATION -> ...)
+    2. Parallel opinion chunks
+    3. Sequential voting updates
+    4. Final decree
     """
     api_keys = parse_api_keys(x_api_keys)
-    router = get_router(api_keys)
+    from backend.core.orchestrator import CouncilOrchestrator
+    orchestrator = CouncilOrchestrator()
     
-    # Default council members
-    council = [
-        {"id": "advocate", "name": "The Advocate", "model": "Gemini Pro"},
-        {"id": "skeptic", "name": "The Skeptic", "model": "Claude 3.5"},
-        {"id": "analyst", "name": "The Analyst", "model": "GPT-4o"},
-        {"id": "pragmatist", "name": "The Pragmatist", "model": "Llama 3.3"},
-        {"id": "visionary", "name": "The Visionary", "model": "Mistral Large"},
-    ]
-    
-    def event_generator():
-        for member in council:
-            # Signal start of member
-            yield f"data: {json.dumps({'type': 'member_start', 'member': member})}\n\n"
+    async def event_generator():
+        try:
+            async for response in orchestrator.run_council_stream(request.prompt, fast_mode=request.fast_mode):
+                # Ensure the response is converted to dict if it's a CouncilResponse object
+                # (CouncilOrchestrator yields CouncilResponse objects)
+                from backend.models.schemas import CouncilResponse
+                
+                if isinstance(response, CouncilResponse):
+                    data = json.dumps(response.dict())
+                else:
+                    data = json.dumps(response)
+                    
+                yield f"data: {data}\n\n"
             
-            try:
-                for chunk in router.chat_stream(
-                    prompt=request.prompt,
-                    model_id=member["id"],
-                    model_name=member["model"],
-                ):
-                    data = json.dumps({
-                        "type": "chunk",
-                        "member_id": member["id"],
-                        "content": chunk
-                    })
-                    yield f"data: {data}\n\n"
-            except Exception as e:
-                error_data = json.dumps({
-                    "type": "error",
-                    "member_id": member["id"],
-                    "error": str(e)
-                })
-                yield f"data: {error_data}\n\n"
-            
-            # Signal end of member
-            yield f"data: {json.dumps({'type': 'member_end', 'member_id': member['id']})}\n\n"
-        
-        yield "data: [DONE]\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            error_data = json.dumps({"type": "error", "content": str(e)})
+            yield f"data: {error_data}\n\n"
+            yield "data: [DONE]\n\n"
     
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
     )
 
 

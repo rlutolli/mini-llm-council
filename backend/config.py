@@ -50,6 +50,6 @@ BITNET_MODEL_PATH = os.path.expanduser("~/bitnet/models/BitNet-b1.58-2B-4T")
 BITNET_EXECUTABLE = os.path.expanduser("~/bitnet/run_inference.py")
 
 # --- Deep Research ---
-BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")  # Optional, DuckDuckGo is primary
+# DuckDuckGo is primary, no API key required.
 MAX_RESEARCH_ITERATIONS = 3  # UI-configurable (1-5)
 

@@ -135,6 +135,7 @@ export interface AppSettings {
   mode: 'demo' | 'live';
   theme: 'light' | 'dark' | 'system';
   autoFallback: boolean; // New: auto-fallback preference
+  fastMode: boolean; // Use local models primarily
 }
 
 // ==================== DEFAULT PERSONALITIES ====================

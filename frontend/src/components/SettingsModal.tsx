@@ -34,12 +34,11 @@ import {
   getCouncilConfig,
   saveCouncilConfig,
   resetCouncilConfig,
-  AVAILABLE_MODELS,
 } from '@/lib/storage';
+import { AVAILABLE_MODELS } from '@/lib/storage';
 import type { AppSettings } from '@/types/council';
 import type { APIKeys, CouncilConfig } from '@/lib/storage';
 import { SystemMetrics, BitNetStatus } from './settings';
-import { Terminal } from 'lucide-react';
 
 const COUNCIL_ROLES = [
   { id: 'advocate', name: 'The Advocate', description: 'Champion of Possibilities' },
@@ -72,15 +71,17 @@ const API_PROVIDERS = [
 ];
 
 export function SettingsModal() {
-  const [settings, setSettings] = useState<AppSettings>({ mode: 'demo', theme: 'system', autoFallback: true });
+  const [settings, setSettings] = useState<AppSettings>({ mode: 'demo', theme: 'system', autoFallback: true, fastMode: false });
   const [apiKeys, setApiKeys] = useState<APIKeys>({});
   const [councilConfig, setCouncilConfig] = useState<CouncilConfig>({});
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    setSettings(getSettings());
-    setApiKeys(getAPIKeys());
-    setCouncilConfig(getCouncilConfig());
+    if (open) {
+      setSettings(getSettings());
+      setApiKeys(getAPIKeys());
+      setCouncilConfig(getCouncilConfig());
+    }
   }, [open]);
 
   const handleModeChange = (isLive: boolean) => {
@@ -91,6 +92,12 @@ export function SettingsModal() {
 
   const handleAutoFallbackChange = (enabled: boolean) => {
     const newSettings = { ...settings, autoFallback: enabled };
+    setSettings(newSettings);
+    saveSettings(newSettings);
+  };
+
+  const handleFastModeChange = (enabled: boolean) => {
+    const newSettings = { ...settings, fastMode: enabled };
     setSettings(newSettings);
     saveSettings(newSettings);
   };
@@ -111,7 +118,6 @@ export function SettingsModal() {
     resetCouncilConfig();
     setCouncilConfig(getCouncilConfig());
   };
-
 
   const configuredKeysCount = Object.values(apiKeys).filter(Boolean).length;
 
@@ -187,6 +193,24 @@ export function SettingsModal() {
               />
             </div>
 
+            {/* Fast Mode Toggle */}
+            <div className="flex items-center justify-between pt-2 border-t border-border/50">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="fast-mode-toggle">Fast / Offline Mode</Label>
+                  {settings.fastMode && <Badge variant="default" className="text-[10px] bg-amber-500">Local Only</Badge>}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Force all council members to use local BitNet/Ollama models. Great for offline or cost-sensitive use.
+                </p>
+              </div>
+              <Switch
+                id="fast-mode-toggle"
+                checked={settings.fastMode}
+                onCheckedChange={handleFastModeChange}
+              />
+            </div>
+
             {settings.mode === 'live' && configuredKeysCount === 0 && (
               <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3">
                 <p className="text-xs text-amber-600 dark:text-amber-400">
@@ -195,7 +219,6 @@ export function SettingsModal() {
               </div>
             )}
           </TabsContent>
-
 
           {/* API Keys Tab */}
           <TabsContent value="api-keys" className="space-y-4 mt-4">

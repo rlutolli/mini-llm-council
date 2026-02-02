@@ -317,15 +317,21 @@ class LMSYSAgent:
             try {
                 // 1. Check if we are already in Direct Chat
                 const allBtns = Array.from(document.querySelectorAll('button'));
-                const headerBtns = allBtns.filter(b => b.getBoundingClientRect().top < 100);
+                const headerBtns = allBtns.filter(b => b.getBoundingClientRect().top < 120);
                 
                 const modeBtn = headerBtns.find(b => b.innerText.includes('Direct Chat'));
-                if (modeBtn) return 'already-direct';
+                if (modeBtn && modeBtn.getAttribute('aria-expanded') === 'false') {
+                    // We are in the mode, but let's check if it's actually the active view
+                    return 'already-direct';
+                }
 
-                // 2. Find the switcher button (usually 'Battle' or 'Side-by-Side' or has a chevron)
-                // It's the leftmost dropdown in the header group
-                headerBtns.sort((a,b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
-                const switcher = headerBtns.find(b => b.innerText.includes('Battle') || b.innerText.includes('Side-by-Side') || b.innerText.includes('Arena'));
+                // 2. Find the switcher button
+                const switcher = headerBtns.find(b => 
+                    b.innerText.includes('Battle') || 
+                    b.innerText.includes('Side-by-Side') || 
+                    b.innerText.includes('Arena') ||
+                    b.innerText.includes('Direct Chat')
+                );
                 
                 if (switcher) {
                     switcher.click();
@@ -339,8 +345,7 @@ class LMSYSAgent:
         logger.info(f"Mode check result: {result}")
         
         if result == 'clicked-switcher':
-            time.sleep(1.5)
-            # Find and click 'Direct Chat' option in the menu
+            time.sleep(1.0)
             select_js = """
             (function() {
                 const options = Array.from(document.querySelectorAll('[role="option"], [role="menuitem"], button, li'));
@@ -354,7 +359,7 @@ class LMSYSAgent:
             """
             res2 = tab.run_js(select_js)
             logger.info(f"Select direct chat result: {res2}")
-            time.sleep(2.0)
+            time.sleep(1.5)
 
     def _select_model(self, tab: ChromiumPage, model_name: str) -> bool:
         """Select the specified model in Arena's dropdown."""
@@ -381,14 +386,14 @@ class LMSYSAgent:
                     const modeIdx = headerBtns.findIndex(b => b.innerText.includes('Direct Chat'));
                     
                     if (modeIdx !== -1 && modeIdx + 1 < headerBtns.length) {
-                        const modelBtn = headerButtons[modeIdx + 1];
+                        const modelBtn = headerBtns[modeIdx + 1];
                         modelBtn.scrollIntoView();
                         modelBtn.click();
                         return 'clicked_model_dropdown';
                     }
                     
                     // Fallback: look for button with common model names or text-xs (model dropdown is smaller)
-                    const modelBtn = headerButtons.find(b => 
+                    const modelBtn = headerBtns.find(b => 
                         !b.innerText.includes('Direct Chat') && 
                         (b.innerText.toLowerCase().includes('gpt') || 
                          b.innerText.toLowerCase().includes('gemini') || 

@@ -15,7 +15,8 @@ export interface StreamCallbacks {
  */
 export async function runCouncilDeliberation(
     prompt: string,
-    callbacks: StreamCallbacks
+    callbacks: StreamCallbacks,
+    options: { fast_mode?: boolean } = {}
 ): Promise<void> {
     const apiKeys = getAPIKeys();
 
@@ -26,7 +27,7 @@ export async function runCouncilDeliberation(
                 'Content-Type': 'application/json',
                 'X-API-Keys': JSON.stringify(apiKeys),
             },
-            body: JSON.stringify({ prompt }),
+            body: JSON.stringify({ prompt, fast_mode: options.fast_mode }),
         });
 
         if (!response.ok) {
@@ -99,7 +100,8 @@ export async function runCouncilDeliberation(
 export async function runLiveDeliberation(
     prompt: string,
     memberIds: string[],
-    callbacks: StreamCallbacks
+    callbacks: StreamCallbacks,
+    options: { fast_mode?: boolean } = {}
 ): Promise<void> {
     const apiKeys = getAPIKeys();
 
@@ -114,6 +116,7 @@ export async function runLiveDeliberation(
                 body: JSON.stringify({
                     prompt,
                     model_id: memberId,
+                    fast_mode: options.fast_mode
                 }),
             });
 

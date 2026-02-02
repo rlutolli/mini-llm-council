@@ -89,7 +89,7 @@ COUNCIL_PERSONAS = {
         name="The Pragmatist",
         title="Reality Checker",
         color="#F59E0B",  # Amber
-        model_id="gpt-5.1-high",
+        model_id="gpt-5.1-high", 
         system_prompt=(
             "You are The Pragmatist, Reality Checker. "
             "Focus on the 'How' and the cost. "
@@ -278,7 +278,8 @@ class LangGraphOrchestrator:
     
     async def run_council_stream(
         self, 
-        user_prompt: str
+        user_prompt: str,
+        fast_mode: bool = False
     ) -> AsyncGenerator[CouncilResponse, None]:
         """
         Execute the council with real-time streaming.
@@ -324,8 +325,8 @@ class LangGraphOrchestrator:
         queue = asyncio.Queue()
         personas = list(COUNCIL_PERSONAS.values())
         
-        async def stream_persona(persona: CouncilPersona, q: asyncio.Queue):
-            """Stream a single persona's opinion"""
+        async def stream_persona(persona: CouncilPersona, q: asyncio.Queue, is_fast: bool):
+            """Stream a single persona's opinion using either local or cloud models"""
             prompt = (
                 f"{persona.system_prompt}\n\n"
                 f"TOPIC: {user_prompt}\n\n"
@@ -333,17 +334,41 @@ class LangGraphOrchestrator:
             )
             
             try:
-                async for chunk in self.web_agent.chat_stream(
-                    prompt, 
-                    persona.model_id, 
-                    persona.model_id
-                ):
-                    await q.put(CouncilResponse(
-                        type="token",
-                        source=persona.id,
-                        content=chunk
-                    ))
+                # Use local models if Fast Mode is active, or if explicitly requested
+                use_local = is_fast or persona.model_id in ["local", "bitnet", "ollama"]
+                
+                if use_local:
+                    # Use the hybrid local member (BitNet with Ollama fallback)
+                    yield_chunk = ""
+                    # Note: currently HybridLocalMember (bitnet_node.py) has a simple generate_opinion
+                    # but we should ideally stream from it too.
+                    # For now, we'll use generate_opinion and manually put it into chunks if it's not streaming.
+                    result = await self.bitnet.generate_opinion(prompt)
+                    content = result.get("content", "")
+                    
+                    # Split into fake chunks to maintain streaming UI feel if necessary
+                    # but better if we had a real streamer.
+                    for i in range(0, len(content), 32):
+                        chunk = content[i:i+32]
+                        await q.put(CouncilResponse(
+                            type="token",
+                            source=persona.id,
+                            content=chunk
+                        ))
+                else:
+                    # Use the standard web-agent browser flow for cloud models
+                    async for chunk in self.web_agent.chat_stream(
+                        prompt, 
+                        persona.model_id, 
+                        persona.model_id
+                    ):
+                        await q.put(CouncilResponse(
+                            type="token",
+                            source=persona.id,
+                            content=chunk
+                        ))
             except Exception as e:
+                logger.error(f"Persona {persona.id} failed: {e}")
                 await q.put(CouncilResponse(
                     type="error",
                     source=persona.id,
@@ -358,7 +383,7 @@ class LangGraphOrchestrator:
         
         # Launch all personas
         tasks = [
-            asyncio.create_task(stream_persona(p, queue)) 
+            asyncio.create_task(stream_persona(p, queue, fast_mode)) 
             for p in personas
         ]
         

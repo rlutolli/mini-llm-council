@@ -31,15 +31,12 @@ class SearchResult:
 
 
 class WebSearchNode:
-    """Multi-provider web search with automatic fallback"""
+    """Multi-provider web search with DuckDuckGo as primary"""
     
-    PROVIDERS = ["duckduckgo", "brave"]  # Fallback order
+    PROVIDERS = ["duckduckgo"]
     
     def __init__(self):
-        self.brave_available = bool(BRAVE_API_KEY)
-        
-        if self.brave_available:
-            logger.info("Brave Search API available as backup")
+        logger.info("WebSearchNode initialized (DuckDuckGo only)")
     
     async def search(
         self, 
@@ -48,25 +45,10 @@ class WebSearchNode:
         provider: str = "duckduckgo"
     ) -> List[SearchResult]:
         """
-        Execute searches and return structured results.
-        
-        Args:
-            queries: List of search queries
-            max_results: Max results per query
-            provider: Preferred provider (duckduckgo/brave)
-        
-        Returns:
-            List of SearchResult objects
+        Execute searches and return structured results via DuckDuckGo.
         """
         loop = asyncio.get_running_loop()
-        
-        if provider == "duckduckgo":
-            return await self._search_duckduckgo(queries, max_results, loop)
-        elif provider == "brave" and self.brave_available:
-            return await self._search_brave(queries, max_results, loop)
-        else:
-            # Fallback to DDG
-            return await self._search_duckduckgo(queries, max_results, loop)
+        return await self._search_duckduckgo(queries, max_results, loop)
     
     async def _search_duckduckgo(
         self, 
@@ -97,40 +79,6 @@ class WebSearchNode:
         for query in queries:
             results = await loop.run_in_executor(None, sync_search, query)
             all_results.extend(results)
-        
-        return all_results
-    
-    async def _search_brave(
-        self, 
-        queries: List[str], 
-        max_results: int,
-        loop
-    ) -> List[SearchResult]:
-        """Search using Brave Search API (requires API key)"""
-        import httpx
-        
-        all_results = []
-        headers = {"X-Subscription-Token": BRAVE_API_KEY}
-        
-        async with httpx.AsyncClient() as client:
-            for query in queries:
-                try:
-                    resp = await client.get(
-                        "https://api.search.brave.com/res/v1/web/search",
-                        params={"q": query, "count": max_results},
-                        headers=headers
-                    )
-                    data = resp.json()
-                    
-                    for r in data.get("web", {}).get("results", []):
-                        all_results.append(SearchResult(
-                            title=r.get("title", ""),
-                            url=r.get("url", ""),
-                            snippet=r.get("description", ""),
-                            source="brave"
-                        ))
-                except Exception as e:
-                    logger.warning(f"Brave search failed: {e}")
         
         return all_results
     

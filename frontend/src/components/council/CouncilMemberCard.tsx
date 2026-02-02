@@ -21,9 +21,9 @@ export function CouncilMemberCard({ member, isActive }: CouncilMemberCardProps) 
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           className={cn(
-            'flex flex-col items-center gap-1.5 p-2 rounded-lg cursor-pointer transition-colors',
-            'hover:bg-secondary/80',
-            isActive && 'bg-secondary'
+            'flex flex-col items-center gap-1.5 p-2 rounded-lg cursor-pointer transition-all duration-200',
+            'hover:bg-secondary/40',
+            isActive && 'bg-secondary/60 ring-1 ring-primary/20 shadow-inner'
           )}
         >
           {/* Avatar */}

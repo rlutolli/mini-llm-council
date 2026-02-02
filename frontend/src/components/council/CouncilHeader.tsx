@@ -14,7 +14,7 @@ export function CouncilHeader({ members, activeMemberId, onSelectMember, leadMem
     <motion.header
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border"
+      className="bg-transparent"
     >
       <div className="max-w-4xl mx-auto px-4">
         <div className="flex items-center justify-between py-3">

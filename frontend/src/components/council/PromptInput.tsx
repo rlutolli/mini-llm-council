@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Loader2, Paperclip, CheckCircle, AlertCircle } from 'lucide-react';
+import { Send, Loader2, Paperclip, CheckCircle, AlertCircle, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import type { DebatePhase } from '@/types/council';
+import { getSettings, saveSettings } from '@/lib/storage';
+import { cn } from '@/lib/utils';
 
 interface PromptInputProps {
   onSubmit: (prompt: string) => void;
@@ -17,11 +19,19 @@ export function PromptInput({ onSubmit, phase, placeholder = "Ask anything...", 
   const [value, setValue] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<string | null>(null);
+  const [fastMode, setFastMode] = useState(false);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const isLoading = phase !== 'idle' && phase !== 'complete';
+
+  // Load initial fastMode state
+  useEffect(() => {
+    const settings = getSettings();
+    setFastMode(settings.fastMode || false);
+  }, []);
 
   useEffect(() => {
     if (phase === 'idle' && textareaRef.current) {
@@ -43,6 +53,20 @@ export function PromptInput({ onSubmit, phase, placeholder = "Ask anything...", 
     }
   };
 
+  const toggleFastMode = () => {
+    const newFastMode = !fastMode;
+    setFastMode(newFastMode);
+    const settings = getSettings();
+    saveSettings({ ...settings, fastMode: newFastMode });
+
+    toast({
+      title: newFastMode ? 'Fast Mode Enabled' : 'Standard Mode Enabled',
+      description: newFastMode
+        ? 'Using local BitNet/Ollama models for this deliberation.'
+        : 'Using high-performance cloud models via LMArena.',
+    });
+  };
+
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -53,7 +77,7 @@ export function PromptInput({ onSubmit, phase, placeholder = "Ask anything...", 
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/upload', {
+      const res = await fetch('http://localhost:8000/api/upload', {
         method: 'POST',
         body: formData,
       });
@@ -67,7 +91,7 @@ export function PromptInput({ onSubmit, phase, placeholder = "Ask anything...", 
 
       toast({
         title: 'File uploaded',
-        description: `${file.name} added to knowledge base (${data.chunks} chunks)`,
+        description: `${file.name} added to knowledge base (${data.chunks_added} chunks)`,
       });
     } catch (error) {
       toast({
@@ -77,7 +101,6 @@ export function PromptInput({ onSubmit, phase, placeholder = "Ask anything...", 
       });
     } finally {
       setIsUploading(false);
-      // Reset input so same file can be re-uploaded
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -91,29 +114,45 @@ export function PromptInput({ onSubmit, phase, placeholder = "Ask anything...", 
       className="sticky bottom-0 bg-background/95 backdrop-blur-sm border-t border-border py-4"
     >
       <div className="max-w-2xl mx-auto px-4">
-        {/* Uploaded file indicator */}
-        <AnimatePresence>
-          {uploadedFile && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="flex items-center gap-2 text-xs text-emerald-500 mb-2"
-            >
-              <CheckCircle className="h-3 w-3" />
-              <span>{uploadedFile} added to context</span>
-              <button
-                onClick={() => setUploadedFile(null)}
-                className="text-muted-foreground hover:text-foreground"
+        {/* Indicators Row */}
+        <div className="flex items-center justify-between mb-2 h-5">
+          <AnimatePresence>
+            {uploadedFile ? (
+              <motion.div
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                className="flex items-center gap-2 text-xs text-emerald-500"
               >
-                ×
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                <CheckCircle className="h-3 w-3" />
+                <span>{uploadedFile} added to context</span>
+                <button
+                  onClick={() => setUploadedFile(null)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  ×
+                </button>
+              </motion.div>
+            ) : <div />}
+          </AnimatePresence>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleFastMode}
+            className={cn(
+              "h-6 px-2 text-[10px] gap-1 rounded-full border transition-all",
+              fastMode
+                ? "bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20"
+                : "text-muted-foreground hover:bg-secondary/80 border-transparent"
+            )}
+          >
+            <Zap className={cn("h-3 w-3", fastMode && "fill-amber-500")} />
+            {fastMode ? 'FAST MODE (LOCAL)' : 'STANDARD MODE'}
+          </Button>
+        </div>
 
         <div className="relative">
-          {/* Hidden file input */}
           <input
             ref={fileInputRef}
             type="file"
@@ -133,9 +172,7 @@ export function PromptInput({ onSubmit, phase, placeholder = "Ask anything...", 
             rows={2}
           />
 
-          {/* Button group */}
           <div className="absolute bottom-2 right-2 flex items-center gap-1">
-            {/* File upload button */}
             <Button
               variant="ghost"
               size="icon"
@@ -151,7 +188,6 @@ export function PromptInput({ onSubmit, phase, placeholder = "Ask anything...", 
               )}
             </Button>
 
-            {/* Send button */}
             <Button
               onClick={handleSubmit}
               disabled={!value.trim() || isLoading || disabled}

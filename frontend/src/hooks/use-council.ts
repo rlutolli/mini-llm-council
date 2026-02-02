@@ -8,9 +8,8 @@ import {
   type Debate,
   COUNCIL_MEMBERS,
 } from '@/types/council';
-import { runDemoDeliberation } from '@/lib/demo-engine';
 import { runLiveDeliberation, runCouncilDeliberation } from '@/lib/council-engine';
-import { getSettings, saveDebate } from '@/lib/storage';
+import { getSettings, saveDebate, saveSettings } from '@/lib/storage';
 
 // Chat message for normal conversations
 export interface ChatMessage {
@@ -29,7 +28,7 @@ export interface Draft {
   keyPoints: string[];
 }
 
-export type ViewMode = 'chat' | 'council';
+export type ViewMode = 'chat' | 'council' | 'research';
 
 export type NotificationType = 'fallback' | 'rate_limit' | 'error' | 'challenge';
 
@@ -40,7 +39,6 @@ export interface Notification {
   details?: string;
   timestamp: Date;
 }
-
 
 export interface UseCouncilReturn {
   // View Mode
@@ -63,8 +61,7 @@ export interface UseCouncilReturn {
   notifications: Notification[];
   dismissNotification: (id: string) => void;
 
-
-  // Council Mode (existing)
+  // Council Mode
   members: CouncilMember[];
   messages: DebateMessage[];
   decree: Decree | null;
@@ -81,15 +78,9 @@ export interface UseCouncilReturn {
   reset: () => void;
 }
 
-
 export function useCouncil(): UseCouncilReturn {
-  // View mode state
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
-
-  // Chat mode state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-
-  // Council mode state (existing)
   const [members, setMembers] = useState<CouncilMember[]>(
     COUNCIL_MEMBERS.map((m) => ({ ...m, status: 'idle', vote: null }))
   );
@@ -100,34 +91,17 @@ export function useCouncil(): UseCouncilReturn {
   const [leadMemberId, setLeadMemberId] = useState<string>(COUNCIL_MEMBERS[0].id);
   const [challenge, setChallenge] = useState<string | null>(null);
 
-  // Draft approval state
   const [draft, setDraft] = useState<Draft | null>(null);
   const [isDraftPending, setIsDraftPending] = useState(false);
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
-
-  // Notifications state
   const [notifications, setNotifications] = useState<Notification[]>([]);
-
-  const addNotification = useCallback((type: NotificationType, message: string, details?: string) => {
-    const notification: Notification = {
-      id: `notification-${Date.now()}`,
-      type,
-      message,
-      details,
-      timestamp: new Date(),
-    };
-    setNotifications(prev => [...prev, notification]);
-
-    // Auto-dismiss after 10 seconds for non-error notifications
-    if (type !== 'error') {
-      setTimeout(() => {
-        setNotifications(prev => prev.filter(n => n.id !== notification.id));
-      }, 10000);
-    }
-  }, []);
 
   const dismissNotification = useCallback((id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
+  }, []);
+
+  const clearChallenge = useCallback(() => {
+    setChallenge(null);
   }, []);
 
   const reset = useCallback(() => {
@@ -138,13 +112,11 @@ export function useCouncil(): UseCouncilReturn {
     setPhase('idle');
     setCurrentPrompt('');
     setChallenge(null);
-
     setViewMode('chat');
     setDraft(null);
     setIsDraftPending(false);
     setIsGeneratingDraft(false);
   }, []);
-
 
   const showTab = useCallback(async (memberId: string) => {
     try {
@@ -154,14 +126,12 @@ export function useCouncil(): UseCouncilReturn {
     }
   }, []);
 
-  // Send a chat message (Chat Mode - multi-turn conversation)
   const sendChatMessage = useCallback(async (content: string) => {
     if (!content.trim()) return;
 
     setPhase('chat');
     setChallenge(null);
 
-    // Add user message
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -171,7 +141,6 @@ export function useCouncil(): UseCouncilReturn {
     };
     setChatMessages(prev => [...prev, userMessage]);
 
-    // Add placeholder for assistant response
     const assistantMessage: ChatMessage = {
       id: `assistant-${Date.now()}`,
       role: 'assistant',
@@ -182,7 +151,6 @@ export function useCouncil(): UseCouncilReturn {
     };
     setChatMessages(prev => [...prev, assistantMessage]);
 
-    // Update member status
     setMembers((prev) =>
       prev.map((m) => m.id === leadMemberId ? { ...m, status: 'thinking', vote: null } : m)
     );
@@ -211,7 +179,7 @@ export function useCouncil(): UseCouncilReturn {
           onVote: () => { },
           onDecreeToken: () => { },
           onDecreeComplete: () => { }
-        });
+        }, { fast_mode: settings.fastMode });
       } catch (err) {
         console.error('Chat failed:', err);
         setChatMessages((prev) =>
@@ -223,19 +191,16 @@ export function useCouncil(): UseCouncilReturn {
     }
   }, [leadMemberId]);
 
-  // Start deliberation (legacy - used for initial council prompt)
   const startDeliberation = useCallback(async (prompt: string) => {
     setCurrentPrompt(prompt);
     setPhase('chat');
     setDecree(null);
     setChallenge(null);
 
-    // Initialize ONLY lead member to thinking
     setMembers((prev) =>
       prev.map((m) => m.id === leadMemberId ? { ...m, status: 'thinking', vote: null } : m)
     );
 
-    // Initial message for lead member
     const initialMessage: DebateMessage = {
       id: `${leadMemberId}-${Date.now()}`,
       memberId: leadMemberId,
@@ -286,7 +251,7 @@ export function useCouncil(): UseCouncilReturn {
           onVote: () => { },
           onDecreeToken: () => { },
           onDecreeComplete: () => { }
-        });
+        }, { fast_mode: settings.fastMode });
       } catch (err) {
         console.error('Deliberation failed:', err);
         setPhase('idle');
@@ -295,14 +260,12 @@ export function useCouncil(): UseCouncilReturn {
   }, [leadMemberId]);
 
   const escalateToCouncil = useCallback(async () => {
-    // Get the topic from chat messages or current prompt
     const chatContent = chatMessages.length > 0
       ? chatMessages.map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.content}`).join('\n')
       : messages[0]?.content || currentPrompt;
 
     if (!chatContent) return;
 
-    // Switch to council mode
     setViewMode('council');
     setPhase('deliberating');
     setChallenge(null);
@@ -324,6 +287,7 @@ export function useCouncil(): UseCouncilReturn {
 
     const promptForCouncil = `The following conversation has been escalated to the Council for deliberation:\n\n${chatContent}\n\nPlease provide your perspective and vote (YES, NO, or ABSTAIN) with rationale.`;
 
+    const settings = getSettings();
     try {
       await runCouncilDeliberation(promptForCouncil, {
         onToken: (memberId, token) => {
@@ -372,7 +336,7 @@ export function useCouncil(): UseCouncilReturn {
         onDecreeComplete: () => {
           setPhase('complete');
         },
-      });
+      }, { fast_mode: settings.fastMode });
     } catch (err) {
       console.error('Escalation failed:', err);
       setPhase('complete');
@@ -385,7 +349,7 @@ export function useCouncil(): UseCouncilReturn {
     setPhase(debate.phase);
     setCurrentPrompt(debate.prompt);
     setChallenge(null);
-    setViewMode('council'); // Loaded debates are council mode
+    setViewMode('council');
 
     const firstAssistantMsg = debate.messages.find(m => m.memberId);
     if (firstAssistantMsg) {
@@ -401,37 +365,16 @@ export function useCouncil(): UseCouncilReturn {
     }));
   }, []);
 
-  // Warmup effect
-  useEffect(() => {
-    const warmup = async () => {
-      try {
-        const settings = getSettings();
-        if (settings.mode === 'live') {
-          await fetch('http://localhost:8000/api/warmup', { method: 'POST' });
-        }
-      } catch (e) { }
-    };
-    warmup();
-  }, []);
-
-  // Helper to clear challenge state
-  const clearChallenge = useCallback(() => {
-    setChallenge(null);
-  }, []);
-
-  // Generate a draft resolution from chat history
   const generateDraft = useCallback(async () => {
     if (chatMessages.length === 0) return;
 
     setIsGeneratingDraft(true);
     setIsDraftPending(true);
 
-    // Build context from chat messages
     const context = chatMessages
       .map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.content}`)
       .join('\n\n');
 
-    // Generate summary using the lead member
     try {
       const response = await fetch('http://localhost:8000/api/chat', {
         method: 'POST',
@@ -439,7 +382,6 @@ export function useCouncil(): UseCouncilReturn {
         body: JSON.stringify({
           prompt: `Based on this conversation, generate a brief resolution summary (2-3 sentences) that captures the main topic and stance for council deliberation:\n\n${context}`,
           model_id: leadMemberId,
-          model_name: 'gemini-3-pro',
         }),
       });
 
@@ -463,7 +405,6 @@ export function useCouncil(): UseCouncilReturn {
         }
       }
 
-      // Extract key points (simple heuristic)
       const keyPoints = summary
         .split(/[.!?]/)
         .filter(s => s.trim().length > 10)
@@ -487,17 +428,13 @@ export function useCouncil(): UseCouncilReturn {
     }
   }, [chatMessages, leadMemberId]);
 
-  // Approve draft and send to council
   const approveDraft = useCallback(async (editedSummary: string) => {
     setIsDraftPending(false);
     setCurrentPrompt(editedSummary);
-
-    // Switch to council mode and start deliberation
     setViewMode('council');
     await escalateToCouncil();
   }, [escalateToCouncil]);
 
-  // Cancel draft
   const cancelDraft = useCallback(() => {
     setDraft(null);
     setIsDraftPending(false);
@@ -505,27 +442,18 @@ export function useCouncil(): UseCouncilReturn {
   }, []);
 
   return {
-    // View Mode
     viewMode,
     setViewMode,
-
-    // Chat Mode
     chatMessages,
     sendChatMessage,
-
-    // Draft Approval
     draft,
     isDraftPending,
     isGeneratingDraft,
     generateDraft,
     approveDraft,
     cancelDraft,
-
-    // Notifications
     notifications,
     dismissNotification,
-
-    // Council Mode
     members,
     messages,
     decree,
@@ -541,6 +469,4 @@ export function useCouncil(): UseCouncilReturn {
     loadDebate,
     reset,
   };
-
 }
-
